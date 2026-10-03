@@ -28,7 +28,7 @@
 	url = https://github.com/Return-To-The-Roots/kaguya.git
 [submodule "s25edit"]
 	path = external/s25edit
-	url = https://github.com/Return-To-The-Roots/s25edit.git
+	url = https://github.com/fred01/s25edit.git
 [submodule "contrib/turtle"]
 	path = external/turtle
 	url = https://github.com/mat007/turtle.git
