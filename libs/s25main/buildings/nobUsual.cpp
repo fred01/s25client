@@ -21,6 +21,7 @@
 #include "world/GameWorld.h"
 #include "gameData/BuildingConsts.h"
 #include "gameData/BuildingProperties.h"
+#include <algorithm>
 #include <numeric>
 
 /// Number of GFs after which the productivity is recalculated, i.e. productivity is averaged over intervals of this
@@ -418,7 +419,7 @@ void nobUsual::ConsumeWares()
         owner.DecreaseInventoryWare(workDesc.waresNeeded[wareIdxToUse], 1);
 
         // try to get ware from warehouses
-        if(numWares[wareIdxToUse] < 2)
+        if(numWares[wareIdxToUse] < 2 && !ShouldCarryOutWares())
         {
             Ware* w = world->GetPlayer(player).OrderWare(workDesc.waresNeeded[wareIdxToUse], *this);
             if(w)
@@ -502,6 +503,8 @@ void nobUsual::SetProductionEnabled(const bool enabled)
 
     if(disableProduction)
     {
+        if(ShouldCarryOutWares())
+            CancelOrderedWares();
         // Wenn sie deaktiviert wurde, dem Arbeiter Bescheid sagen, damit er entsprechend stoppt, falls er schon
         // auf die Arbeit warteet
         if(worker)
@@ -511,6 +514,46 @@ void nobUsual::SetProductionEnabled(const bool enabled)
         // Wenn sie wieder aktiviert wurde, evtl wieder mit arbeiten anfangen, falls es einen Arbeiter gibt
         if(worker)
             worker->GotWareOrProductionAllowed();
+    }
+}
+
+bool nobUsual::ShouldCarryOutWares() const
+{
+    return disableProduction && world->GetGGS().isEnabled(AddonId::CARRY_OUT_WARES_ON_STOP);
+}
+
+helpers::OptionalEnum<GoodType> nobUsual::TakeWareForCarryOut()
+{
+    if(!ShouldCarryOutWares())
+        return std::nullopt;
+    // Take the ware we have the most of
+    const auto itMax = std::max_element(numWares.begin(), numWares.end());
+    if(*itMax == 0)
+        return std::nullopt;
+    const auto idx = static_cast<unsigned>(itMax - numWares.begin());
+    RTTR_Assert(idx < BLD_WORK_DESC[bldType_].waresNeeded.size());
+    --*itMax;
+    return BLD_WORK_DESC[bldType_].waresNeeded[idx];
+}
+
+void nobUsual::CancelOrderedWares()
+{
+    for(std::list<Ware*>& orderedWare : orderedWares)
+    {
+        std::list<Ware*> cancelledWares;
+        for(auto it = orderedWare.begin(); it != orderedWare.end();)
+        {
+            // Too late for wares currently carried into the building. They get carried out again.
+            if((*it)->IsCarried() && (*it)->GetLocation() == this)
+                ++it;
+            else
+            {
+                cancelledWares.push_back(*it);
+                it = orderedWare.erase(it);
+            }
+        }
+        for(Ware* ware : cancelledWares)
+            WareNotNeeded(ware);
     }
 }
 

@@ -2,11 +2,14 @@
 //
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "SerializedGameData.h"
 #include "buildings/nobBaseWarehouse.h"
 #include "buildings/nobUsual.h"
 #include "factories/BuildingFactory.h"
+#include "figures/nofBuildingWorker.h"
 #include "postSystem/PostBox.h"
 #include "postSystem/PostMsg.h"
+#include "worldFixtures/MockLocalGameState.h"
 #include "worldFixtures/WorldWithGCExecution.h"
 #include "gameData/ToolConsts.h"
 #include <rttr/test/LogAccessor.hpp>
@@ -101,6 +104,108 @@ BOOST_FIXTURE_TEST_CASE(MetalWorkerOrders, WorldWithGCExecution1P)
     orders[Tool::Bow] = 1;
     this->ChangeTools(settings, orders.data());
     RTTR_EXEC_TILL(1300, mw->is_working);
+}
+
+namespace {
+struct MintFixture : WorldWithGCExecution1P
+{
+    nobBaseWarehouse* hq;
+    nobUsual* mint;
+    MapPoint mintPos;
+    static constexpr unsigned numGold = 10, numCoal = 10;
+
+    MintFixture() : hq(world.GetSpecObj<nobBaseWarehouse>(hqPos)), mintPos(hqPos.x + 3, hqPos.y)
+    {
+        GoodsAndPeopleCounts inv;
+        inv[GoodType::Gold] = numGold;
+        inv[GoodType::Coal] = numCoal;
+        inv[Job::Minter] = 1;
+        hq->AddToInventory(inv, true);
+        mint = static_cast<nobUsual*>(
+          BuildingFactory::CreateBuilding(world, BuildingType::Mint, mintPos, curPlayer, Nation::Romans));
+        this->BuildRoad(world.GetNeighbour(hqPos, Direction::SouthEast), false,
+                        std::vector<Direction>(3, Direction::East));
+    }
+    unsigned numStoredWares() const { return mint->GetNumWares(0) + mint->GetNumWares(1); }
+    /// All gold and coal is either still there or was converted to coins
+    bool allWaresInHQ() const
+    {
+        const unsigned coins = hq->GetNumRealWares(GoodType::Coins);
+        return hq->GetNumRealWares(GoodType::Gold) + coins == numGold
+               && hq->GetNumRealWares(GoodType::Coal) + coins == numCoal;
+    }
+};
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(StoppedBuildingKeepsWaresWithoutAddon, MintFixture)
+{
+    RTTR_EXEC_TILL(3000, numStoredWares() >= 4u);
+    this->SetProductionEnabled(mintPos, false);
+    // Let the minter finish his current coin
+    RTTR_SKIP_GFS(500);
+    const unsigned numWares = numStoredWares();
+    BOOST_TEST_REQUIRE(numWares > 0u);
+    RTTR_SKIP_GFS(2000);
+    BOOST_TEST(numStoredWares() == numWares);
+}
+
+BOOST_FIXTURE_TEST_CASE(StoppedBuildingCarriesOutWares, MintFixture)
+{
+    ggs.setSelection(AddonId::CARRY_OUT_WARES_ON_STOP, 1);
+    const Inventory& playerInventory = world.GetPlayer(curPlayer).GetInventory();
+    RTTR_EXEC_TILL(3000, numStoredWares() >= 4u);
+    this->SetProductionEnabled(mintPos, false);
+    // Everything gets carried back to the HQ and nothing is created or lost
+    RTTR_EXEC_TILL(4000, numStoredWares() == 0u && allWaresInHQ());
+    BOOST_TEST(playerInventory[GoodType::Gold] == hq->GetNumRealWares(GoodType::Gold));
+    BOOST_TEST(playerInventory[GoodType::Coal] == hq->GetNumRealWares(GoodType::Coal));
+    BOOST_TEST(!mint->AreThereAnyOrderedWares());
+    // Nothing is ordered while stopped
+    RTTR_SKIP_GFS(2000);
+    BOOST_TEST(numStoredWares() == 0u);
+    BOOST_TEST(allWaresInHQ());
+    // Enabling production gets the wares back in
+    this->SetProductionEnabled(mintPos, true);
+    RTTR_EXEC_TILL(3000, numStoredWares() > 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(StoppingCancelsOrderedWares, MintFixture)
+{
+    ggs.setSelection(AddonId::CARRY_OUT_WARES_ON_STOP, 1);
+    RTTR_EXEC_TILL(500, mint->AreThereAnyOrderedWares());
+    this->SetProductionEnabled(mintPos, false);
+    RTTR_EXEC_TILL(4000, numStoredWares() == 0u && allWaresInHQ());
+    BOOST_TEST(hq->GetNumRealWares(GoodType::Coins) == 0u);
+}
+
+BOOST_FIXTURE_TEST_CASE(CarryOutWaresSaveLoad, MintFixture)
+{
+    ggs.setSelection(AddonId::CARRY_OUT_WARES_ON_STOP, 1);
+    RTTR_EXEC_TILL(3000, numStoredWares() >= 4u);
+    const unsigned numWaresBeforeStop = numStoredWares();
+    this->SetProductionEnabled(mintPos, false);
+    // Save while a stored ware is carried out
+    RTTR_EXEC_TILL(2000, numStoredWares() < numWaresBeforeStop
+                           && mint->GetWorker()->GetState() == nofBuildingWorker::State::CarryoutWare);
+    SerializedGameData sgd;
+    sgd.MakeSnapshot(*game);
+    MockLocalGameState lgs;
+    em.Clear();
+    world.Unload();
+    sgd.ReadSnapshot(*game, lgs);
+    // Serialize again and compare data
+    SerializedGameData sgd2;
+    sgd2.MakeSnapshot(*game);
+    BOOST_CHECK_EQUAL_COLLECTIONS(sgd.GetData(), sgd.GetData() + sgd.GetLength(), sgd2.GetData(),
+                                  sgd2.GetData() + sgd2.GetLength());
+
+    hq = world.GetSpecObj<nobBaseWarehouse>(hqPos);
+    mint = world.GetSpecObj<nobUsual>(mintPos);
+    BOOST_TEST_REQUIRE((mint->GetWorker()->GetState() == nofBuildingWorker::State::CarryoutWare));
+    RTTR_EXEC_TILL(4000, numStoredWares() == 0u && allWaresInHQ());
+    const Inventory& playerInventory = world.GetPlayer(curPlayer).GetInventory();
+    BOOST_TEST(playerInventory[GoodType::Gold] == hq->GetNumRealWares(GoodType::Gold));
+    BOOST_TEST(playerInventory[GoodType::Coal] == hq->GetNumRealWares(GoodType::Coal));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

@@ -109,7 +109,8 @@ void GlobalGameSettings::registerAllAddons()
         AddonForesterFarmFieldAvoidance,
         AddonForesterReachRadius,
         AddonWoodcutterReachRadius,
-        AddonStonemasonReachRadius
+        AddonStonemasonReachRadius,
+        AddonCarryOutWaresOnStop
     >;
     // clang-format on
     using namespace boost::mp11;

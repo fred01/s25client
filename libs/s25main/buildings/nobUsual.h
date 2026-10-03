@@ -5,6 +5,7 @@
 #pragma once
 
 #include "noBuilding.h"
+#include "helpers/OptionalEnum.h"
 #include "gameTypes/GoodTypes.h"
 #include <array>
 #include <list>
@@ -112,6 +113,10 @@ public:
     bool IsProductionDisabledVirtual() const { return disableProductionVirtual; }
     /// Fragt ab, ob Produktion ausgeschaltet ist (real)
     bool IsProductionDisabled() const { return disableProduction; }
+    /// True if the worker should carry the stored wares out of the building (production stopped + addon)
+    bool ShouldCarryOutWares() const;
+    /// Remove one stored ware so the worker can carry it out. Returns nothing if no ware should be carried out
+    helpers::OptionalEnum<GoodType> TakeWareForCarryOut();
     /// Called when there are no more resources
     void OnOutOfResources();
     /// Fängt an NICHT zu arbeiten (wird gemessen fürs Ausrechnen der Produktivität)
@@ -122,4 +127,6 @@ public:
 private:
     /// Calculates the productivity and resets the counter
     unsigned short CalcCurrentProductivity();
+    /// Redirect all ordered wares except those currently carried into the building
+    void CancelOrderedWares();
 };

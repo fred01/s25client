@@ -53,6 +53,8 @@ protected:
 
     /// Hat der Bauarbeiter bei seiner Arbeit Sounds von sich gegeben (zu Optimeriungszwecken)
     bool was_sounding;
+    /// True if the carried ware is a stored input ware being carried out (not a produced one)
+    bool carriesStoredWare;
 
     /// wird von abgeleiteten Klassen aufgerufen, wenn sie die Ware an der Fahne vorm Gebäude ablegen wollen (oder auch
     /// nicht) also fertig mit Arbeiten sind
@@ -62,6 +64,9 @@ protected:
     /// Tries to start working.
     /// Checks preconditions (production enabled, wares available...) and starts the pre-Work-Waiting period if ok
     virtual void TryToWork();
+    /// Takes a stored ware out of the workplace and starts carrying it to the flag, if requested.
+    /// Returns true if a ware is carried out
+    bool TryToCarryOutStoredWare();
     /// Returns true, when there are enough wares available for working.
     /// Note: On false, we will wait for the next ware or production change till checking again
     virtual bool AreWaresAvailable() const;

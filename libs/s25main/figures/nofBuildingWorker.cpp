@@ -19,7 +19,8 @@
 #include "gameData/ShieldConsts.h"
 
 nofBuildingWorker::nofBuildingWorker(const Job job, const MapPoint pos, const unsigned char player, nobUsual* workplace)
-    : noFigure(job, pos, player, workplace), state(State::FigureWork), workplace(workplace), was_sounding(false)
+    : noFigure(job, pos, player, workplace), state(State::FigureWork), workplace(workplace), was_sounding(false),
+      carriesStoredWare(false)
 {
     RTTR_Assert(dynamic_cast<nobUsual*>(static_cast<GameObject*>(
       workplace))); // Assume we have at least a GameObject and check if it is a valid workplace
@@ -36,6 +37,7 @@ void nofBuildingWorker::Serialize(SerializedGameData& sgd) const
         sgd.PushObject(workplace);
         sgd.PushOptionalEnum<uint8_t>(ware);
         sgd.PushBool(was_sounding);
+        sgd.PushBool(carriesStoredWare);
     }
 }
 
@@ -57,11 +59,13 @@ nofBuildingWorker::nofBuildingWorker(SerializedGameData& sgd, const unsigned obj
         } else
             ware = sgd.PopOptionalEnum<GoodType>();
         was_sounding = sgd.PopBool();
+        carriesStoredWare = sgd.GetGameDataVersion() >= 16 && sgd.PopBool();
     } else
     {
         workplace = nullptr;
         ware = std::nullopt;
         was_sounding = false;
+        carriesStoredWare = false;
     }
 }
 
@@ -76,6 +80,13 @@ void nofBuildingWorker::AbrogateWorkplace()
 
 void nofBuildingWorker::Draw(DrawPoint drawPt)
 {
+    // Stored input wares are carried like a carrier does as there are no worker graphics for them
+    if(ware && carriesStoredWare
+       && (state == State::CarryoutWare || state == State::WalkingHome || state == State::EnterBuilding))
+    {
+        DrawWalkingCarrier(drawPt, ware, JOB_SPRITE_CONSTS[job_].isFat());
+        return;
+    }
     switch(state)
     {
         case State::FigureWork:
@@ -151,8 +162,10 @@ void nofBuildingWorker::WorkingReady()
             auto real_ware = std::make_unique<Ware>(*ware, nullptr, flag);
             real_ware->WaitAtFlag(*flag);
             // Inventur entsprechend erhöhen, dabei Schilder unterscheiden!
+            // Stored wares are already part of the inventory and were not produced
             GoodType ware_type = ConvertShields(real_ware->type);
-            world->GetPlayer(player).IncreaseInventoryWare(ware_type, 1);
+            if(!carriesStoredWare)
+                world->GetPlayer(player).IncreaseInventoryWare(ware_type, 1);
             // Abnehmer für Ware finden
             real_ware->SetGoal(world->GetPlayer(player).FindClientForWare(*real_ware));
             // Ware soll ihren weiteren Weg berechnen
@@ -160,9 +173,11 @@ void nofBuildingWorker::WorkingReady()
             // Ware ablegen
             flag->AddWare(std::move(real_ware));
             // Warenstatistik erhöhen
-            world->GetPlayer(this->player).IncreaseMerchandiseStatistic(ware_type);
+            if(!carriesStoredWare)
+                world->GetPlayer(this->player).IncreaseMerchandiseStatistic(ware_type);
             // Tragen nun keine Ware mehr
             ware = std::nullopt;
+            carriesStoredWare = false;
         }
     }
 
@@ -171,8 +186,25 @@ void nofBuildingWorker::WorkingReady()
     state = State::EnterBuilding;
 }
 
+bool nofBuildingWorker::TryToCarryOutStoredWare()
+{
+    const auto storedWare = workplace->TakeWareForCarryOut();
+    if(!storedWare)
+        return false;
+    ware = storedWare;
+    carriesStoredWare = true;
+    // Same as when a produced ware could not be put at the flag: wait for space and walk out
+    state = State::WaitForWareSpace;
+    workplace->StartNotWorking();
+    if(workplace->GetFlag()->HasSpaceForWare())
+        FreePlaceAtFlag();
+    return true;
+}
+
 void nofBuildingWorker::TryToWork()
 {
+    if(TryToCarryOutStoredWare())
+        return;
     if(!workplace->IsProductionDisabled() && AreWaresAvailable())
     {
         state = State::Waiting1;
@@ -290,6 +322,14 @@ void nofBuildingWorker::LostWork()
         break;
     }
 
+    // A stored ware is still counted in the inventory but is lost now
+    if(ware && carriesStoredWare)
+    {
+        world->GetPlayer(player).DecreaseInventoryWare(*ware, 1);
+        ware = std::nullopt;
+        carriesStoredWare = false;
+    }
+
     workplace = nullptr;
 }
 
@@ -303,6 +343,9 @@ void nofBuildingWorker::ProductionStopped()
         state = State::WaitingForWaresOrProductionStopped;
         workplace->StartNotWorking();
     }
+    // Start carrying out the stored wares if we are idle
+    if(state == State::WaitingForWaresOrProductionStopped)
+        TryToCarryOutStoredWare();
 }
 
 void nofBuildingWorker::WorkAborted() {}
