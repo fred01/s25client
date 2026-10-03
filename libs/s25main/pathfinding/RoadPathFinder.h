@@ -44,6 +44,8 @@ public:
                     unsigned max = std::numeric_limits<unsigned>::max(), const RoadSegment* forbidden = nullptr);
 
 private:
+    /// True if persons may use water roads (addon)
+    bool humansUseWaterways() const;
     template<class T_AdditionalCosts, class T_SegmentConstraints>
     bool FindPathImpl(const noRoadNode& start, const noRoadNode& goal, unsigned max, T_AdditionalCosts addCosts,
                       T_SegmentConstraints isSegmentAllowed, unsigned* length = nullptr,

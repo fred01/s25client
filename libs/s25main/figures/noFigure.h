@@ -9,6 +9,7 @@
 #include "gameTypes/MapCoordinates.h"
 #include "gameTypes/RoadPathDirection.h"
 #include <cstdint>
+#include <vector>
 
 class ResourceId;
 class RoadSegment;
@@ -75,6 +76,8 @@ protected:
     /// Kommunikation mit anderen Kollegen, die ebenfalls flüchten --> "Kollektivwegfindung", ansonsten ist das
     /// 0xFFFFFFFF
     unsigned burned_wh_id;
+    /// Remaining (reversed) path to the shore when the figure lost its waterway while being on the water
+    std::vector<Direction> shorePath_;
 
     static const RoadSegment emulated_wanderroad;
 
@@ -199,6 +202,10 @@ public:
     bool WalkInRandomDir();
     /// Umherirren starten (frei rumlaufen)
     void StartWandering(unsigned burned_wh_id = 0xFFFFFFFF);
+    /// True if the figure travels by boat (on a waterway or paddling to the shore)
+    bool IsInBoat() const;
+    /// Draw the figure as a paddling boat
+    void DrawInBoat(DrawPoint drawPt);
     /// Auf Straßen(!) nach Hause laufen
     void GoHome(noRoadNode* goal = nullptr);
     /// Aktuellen Weg, auf dem er läuft, fr ungültig erklären

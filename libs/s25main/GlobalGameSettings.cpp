@@ -110,7 +110,8 @@ void GlobalGameSettings::registerAllAddons()
         AddonForesterReachRadius,
         AddonWoodcutterReachRadius,
         AddonStonemasonReachRadius,
-        AddonCarryOutWaresOnStop
+        AddonCarryOutWaresOnStop,
+        AddonSettlersUseWaterways
     >;
     // clang-format on
     using namespace boost::mp11;

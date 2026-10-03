@@ -9,6 +9,7 @@
 #include "GlobalGameSettings.h"
 #include "LeatherLoader.h"
 #include "Loader.h"
+#include "RoadSegment.h"
 #include "SerializedGameData.h"
 #include "WineLoader.h"
 #include "addons/const_addons.h"
@@ -22,6 +23,8 @@
 #include "ogl/glArchivItem_Bob.h"
 #include "ogl/glFont.h"
 #include "ogl/glSmartBitmap.h"
+#include "pathfinding/FreePathFinder.h"
+#include "pathfinding/FreePathFinderImpl.h"
 #include "pathfinding/PathConditionHuman.h"
 #include "random/Random.h"
 #include "world/GameWorld.h"
@@ -31,8 +34,10 @@
 #include "gameTypes/DirectionToImgDir.h"
 #include "gameData/GameConsts.h"
 #include "gameData/JobConsts.h"
+#include "gameData/TerrainDesc.h"
 #include "s25util/Log.h"
 #include "s25util/colors.h"
+#include <algorithm>
 
 const RoadSegment noFigure::emulated_wanderroad(RoadType::Normal, nullptr, nullptr,
                                                 std::vector<Direction>(0, Direction::East));
@@ -100,6 +105,7 @@ void noFigure::Serialize(SerializedGameData& sgd) const
         helpers::pushPoint(sgd, flagPos_);
         sgd.PushUnsignedInt(flag_obj_id);
         sgd.PushUnsignedInt(burned_wh_id);
+        helpers::pushContainer(sgd, shorePath_);
     }
 }
 
@@ -122,6 +128,8 @@ noFigure::noFigure(SerializedGameData& sgd, const unsigned obj_id)
         flagPos_ = sgd.PopMapPoint();
         flag_obj_id = sgd.PopUnsignedInt();
         burned_wh_id = sgd.PopUnsignedInt();
+        if(sgd.GetGameDataVersion() >= 17)
+            helpers::popContainer(sgd, shorePath_);
     }
 }
 
@@ -227,6 +235,28 @@ void noFigure::StartWalking(const Direction dir)
     {
         // Normal hinlaufen
         StartMoving(dir, 20);
+    }
+}
+
+bool noFigure::IsInBoat() const
+{
+    if(cur_rs)
+        return cur_rs->GetRoadType() == RoadType::Water && fs != FigureState::Job;
+    // Paddling to the shore or leaving the water after the waterway was lost
+    return fs == FigureState::Wander
+           && (!shorePath_.empty() || (IsMoving() && !PathConditionHuman(*world).IsNodeOk(pos)));
+}
+
+void noFigure::DrawInBoat(DrawPoint drawPt)
+{
+    const unsigned color = world->GetPlayer(player).color;
+    if(!IsMoving() || (waiting_for_free_node && !IsStoppedBetweenNodes()))
+        LOADER.getBoatCarrierSprite(GetCurMoveDir(), 0).draw(drawPt, 0xFFFFFFFF, color);
+    else
+    {
+        // Paddling boat
+        const unsigned ani_step = CalcWalkAnimationFrame();
+        LOADER.getBoatCarrierSprite(GetCurMoveDir(), ani_step).draw(drawPt + CalcFigurRelative(), 0xFFFFFFFF, color);
     }
 }
 
@@ -454,9 +484,67 @@ void noFigure::GoHome(noRoadNode* goal)
     }
 }
 
+namespace {
+bool isWaterTerrain(const World& world, DescIdx<TerrainDesc> t)
+{
+    return world.GetDescription().get(t).kind == TerrainKind::Water;
+}
+
+/// Land point next to water usable by figures
+struct IsShoreForFigures
+{
+    const World& world;
+    explicit IsShoreForFigures(const World& world) : world(world) {}
+
+    bool operator()(const MapPoint& pt) const
+    {
+        if(!PathConditionHuman(world).IsNodeOk(pt))
+            return false;
+        const auto terrains = world.GetTerrainsAround(pt);
+        return std::any_of(terrains.begin(), terrains.end(),
+                           [this](DescIdx<TerrainDesc> t) { return isWaterTerrain(world, t); });
+    }
+};
+
+/// Paddling with a boat on any water (not only seas as for ships)
+struct PathConditionBoat
+{
+    const World& world;
+    explicit PathConditionBoat(const World& world) : world(world) {}
+
+    bool IsNodeOk(const MapPoint& pt) const { return world.IsWaterPoint(pt); }
+    bool IsEdgeOk(const MapPoint& fromPt, const Direction dir) const
+    {
+        const auto terrains = world.GetTerrain(fromPt, dir);
+        return isWaterTerrain(world, terrains.left) || isWaterTerrain(world, terrains.right);
+    }
+};
+} // namespace
+
 void noFigure::StartWandering(const unsigned burned_wh_id)
 {
     RTTR_Assert(!goal_);
+    shorePath_.clear();
+    // A figure on a waterway might be on the water now: Paddle to the shore first (like a boat carrier)
+    if(cur_rs && cur_rs->GetRoadType() == RoadType::Water)
+    {
+        // If we are walking start from the node we are walking to
+        const MapPoint startPt = IsMoving() ? world->GetNeighbour(pos, GetCurMoveDir()) : pos;
+        if(!PathConditionHuman(*world).IsNodeOk(startPt))
+        {
+            constexpr unsigned maxNodeDistance = 5;
+            for(const MapPoint& shorePt :
+                world->GetMatchingPointsInRadius(startPt, maxNodeDistance, IsShoreForFigures(*world)))
+            {
+                if(world->GetFreePathFinder().FindPath(startPt, shorePt, false, maxNodeDistance * 10, &shorePath_,
+                                                       nullptr, nullptr, PathConditionBoat(*world)))
+                {
+                    std::reverse(shorePath_.begin(), shorePath_.end());
+                    break;
+                }
+            }
+        }
+    }
     fs = FigureState::Wander;
     cur_rs = nullptr;
     rs_pos = 0;
@@ -534,6 +622,14 @@ unsigned short GetStrandedSoldierReturnSearchRadius(const GlobalGameSettings& gg
 
 void noFigure::Wander()
 {
+    // Paddle to the shore before wandering on land
+    if(!shorePath_.empty())
+    {
+        const Direction dir = shorePath_.back();
+        shorePath_.pop_back();
+        StartWalking(dir);
+        return;
+    }
     // Sind wir noch auf der Suche nach einer Flagge?
     if(wander_way == 0xFFFF)
     {

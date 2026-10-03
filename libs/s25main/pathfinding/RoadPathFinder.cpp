@@ -5,6 +5,8 @@
 #include "RoadPathFinder.h"
 #include "EventManager.h"
 #include "RttrForeachPt.h"
+#include "GlobalGameSettings.h"
+#include "addons/const_addons.h"
 #include "buildings/nobHarborBuilding.h"
 #include "pathfinding/OpenListPrioQueue.h"
 #include "pathfinding/OpenListVector.h"
@@ -291,6 +293,11 @@ bool RoadPathFinder::FindPathImpl(const noRoadNode& start, const noRoadNode& goa
     return false;
 }
 
+bool RoadPathFinder::humansUseWaterways() const
+{
+    return gwb_.GetGGS().isEnabled(AddonId::SETTLERS_USE_WATERWAYS);
+}
+
 bool RoadPathFinder::FindPath(const noRoadNode& start, const noRoadNode& goal, const bool wareMode, const unsigned max,
                               const RoadSegment* const forbidden, unsigned* const length,
                               RoadPathDirection* const firstDir, MapPoint* const firstNodePos)
@@ -305,6 +312,14 @@ bool RoadPathFinder::FindPath(const noRoadNode& start, const noRoadNode& goal, c
                                 SegmentConstraints::AvoidSegment(forbidden), length, firstDir, firstNodePos);
         else
             return FindPathImpl(start, goal, max, AdditonalCosts::Carrier(), SegmentConstraints::None(), length,
+                                firstDir, firstNodePos);
+    } else if(humansUseWaterways())
+    {
+        if(forbidden)
+            return FindPathImpl(start, goal, max, AdditonalCosts::None(), SegmentConstraints::AvoidSegment(forbidden),
+                                length, firstDir, firstNodePos);
+        else
+            return FindPathImpl(start, goal, max, AdditonalCosts::None(), SegmentConstraints::None(), length,
                                 firstDir, firstNodePos);
     } else
     {
@@ -322,7 +337,7 @@ bool RoadPathFinder::FindPath(const noRoadNode& start, const noRoadNode& goal, c
 bool RoadPathFinder::PathExists(const noRoadNode& start, const noRoadNode& goal, const bool allowWaterRoads,
                                 const unsigned max, const RoadSegment* const forbidden)
 {
-    if(allowWaterRoads)
+    if(allowWaterRoads || humansUseWaterways())
     {
         // TODO(Replay): Change to target flag instead of its attached building.
         // Likely combine with RoadPathFinder::FindPath

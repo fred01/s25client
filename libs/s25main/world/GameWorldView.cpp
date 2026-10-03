@@ -17,6 +17,7 @@
 #include "buildings/nobMilitary.h"
 #include "buildings/nobUsual.h"
 #include "drivers/VideoDriverWrapper.h"
+#include "figures/noFigure.h"
 #include "helpers/EnumArray.h"
 #include "helpers/Range.h"
 #include "helpers/containerUtils.h"
@@ -127,6 +128,23 @@ struct ObjectBetweenLines
     ObjectBetweenLines(noBase& obj, const DrawPoint& pos) : obj(obj), pos(pos) {}
 };
 
+namespace {
+/// Draw a figure, but as a boat if it travels on a waterway
+void drawFigure(noBase& obj, const DrawPoint& pos)
+{
+    if(obj.GetType() == NodalObjectType::Figure)
+    {
+        auto& figure = static_cast<noFigure&>(obj);
+        if(figure.IsInBoat())
+        {
+            figure.DrawInBoat(pos);
+            return;
+        }
+    }
+    obj.Draw(pos);
+}
+} // namespace
+
 void GameWorldView::Draw(const RoadBuildState& rb, const MapPoint selected, bool drawMouse, unsigned* water)
 {
     SetNextZoomFactor();
@@ -213,7 +231,7 @@ void GameWorldView::Draw(const RoadBuildState& rb, const MapPoint selected, bool
 
         // Draw objects that are between rows now
         for(auto& between_line : objsBetweenRows)
-            between_line.obj.Draw(between_line.pos);
+            drawFigure(between_line.obj, between_line.pos);
     }
 
     if(show_names || show_productivity)
@@ -474,7 +492,7 @@ void GameWorldView::DrawFigures(const MapPoint& pt, const DrawPoint& curPos,
         } else if(figure.GetGOT() == GO_Type::Ship)
             objsBetweenRows.push_back(ObjectBetweenLines(figure, curPos)); // TODO: Why special handling for ships?
         else
-            figure.Draw(curPos); // Draw normally
+            drawFigure(figure, curPos); // Draw normally
     }
 }
 

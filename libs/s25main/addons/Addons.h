@@ -73,3 +73,4 @@
 #include "addons/AddonWoodcutterReachRadius.h"
 
 #include "addons/AddonCarryOutWaresOnStop.h"
+#include "addons/AddonSettlersUseWaterways.h"

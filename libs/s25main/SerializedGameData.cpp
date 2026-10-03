@@ -110,7 +110,8 @@
 /// 14: Remove "age" field in nobBaseMilitary
 /// 15: Add sea to HarborPos::Neighbor
 /// 16: nofBuildingWorker: carriesStoredWare (carry out wares addon)
-static const unsigned currentGameDataVersion = 16;
+/// 17: noFigure: shorePath_ when wandering (settlers use waterways addon)
+static const unsigned currentGameDataVersion = 17;
 // clang-format on
 
 std::unique_ptr<GameObject> SerializedGameData::Create_GameObject(const GO_Type got, const unsigned obj_id)
