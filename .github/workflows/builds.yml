@@ -1,0 +1,156 @@
+# Builds ready to play packages for Windows and macOS and publishes them as the "latest" release
+
+name: Builds
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BOOST_VERSION: 1.81.0
+  # The updater would replace this build with the official one
+  CMAKE_FLAGS: -DRTTR_BUILD_UPDATER=OFF -DBUILD_TESTING=OFF
+
+jobs:
+  windows:
+    name: Windows ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: x64, arch: x64 }
+          - { platform: Win32, arch: x86 }
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: true
+      - name: Install boost
+        uses: MarkusJx/install-boost@8ba8b2fac59ef3d91a838bb4aa53ceabd33d1aa3 # v2.5.1
+        id: install-boost
+        with:
+          boost_version: ${{ env.BOOST_VERSION }}
+          platform_version: 2022
+          toolset: msvc
+      - name: Configure
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
+        shell: cmd
+        run: >
+          cmake -S . -B build -G "Visual Studio 17 2022" -A ${{ matrix.platform }} %CMAKE_FLAGS%
+          -DRTTR_INCLUDE_DEVTOOLS=ON
+          -DCMAKE_EXE_LINKER_FLAGS=/LTCG -DCMAKE_SHARED_LINKER_FLAGS=/LTCG
+          -DCMAKE_INSTALL_PREFIX=%GITHUB_WORKSPACE%\package\s25rttr
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+      - name: Install
+        run: cmake --install build --config Release
+      - name: Add DLLs
+        shell: pwsh
+        run: |
+          $dest = "package\s25rttr"
+          # Libraries copied next to the executable during the build (SDL2, curl, ...)
+          Copy-Item build\Release\*.dll $dest
+          # MSVC runtime
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -property installationPath
+          $crtDir = Get-ChildItem "$vsPath\VC\Redist\MSVC\*\${{ matrix.arch }}\Microsoft.VC*.CRT" -Directory |
+            Sort-Object FullName | Select-Object -Last 1
+          if(-not $crtDir) { throw "MSVC runtime not found" }
+          Copy-Item "$($crtDir.FullName)\*.dll" $dest
+          Get-ChildItem $dest -Recurse -Include *.exe,*.dll | ForEach-Object { $_.FullName }
+      - name: Package
+        shell: bash
+        run: |
+          cd package
+          7z a -tzip ../s25rttr_windows_${{ matrix.arch }}.zip s25rttr
+      - uses: actions/upload-artifact@v7
+        with:
+          name: s25rttr_windows_${{ matrix.arch }}
+          path: s25rttr_windows_${{ matrix.arch }}.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: true
+      - name: Install dependencies
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: |
+          brew install boost sdl2 sdl2_mixer gettext miniupnpc
+          BOOST_ROOT=$(find "$HOMEBREW_CELLAR/boost/"* -maxdepth 0 -type d | tail -n1)
+          [[ -n "$BOOST_ROOT" ]] || exit 1
+          echo "BOOST_ROOT=${BOOST_ROOT}" >> "$GITHUB_ENV"
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${CMAKE_FLAGS}
+          -DRTTR_BUNDLE=ON -DRTTR_INCLUDE_DEVTOOLS=ON
+          -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+          -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/package"
+      - name: Build
+        run: cmake --build build --parallel "$(sysctl -n hw.logicalcpu)"
+      - name: Install
+        # Creates the app bundle including all libraries
+        run: cmake --install build
+      - name: Sign
+        # Apple Silicon only runs signed code, so sign ad-hoc
+        run: |
+          codesign --force --deep --sign - package/s25client.app
+          codesign --verify --deep --verbose package/s25client.app
+          find package/s25client.app -type f -perm +111 -exec file {} \; | grep Mach-O
+      - name: Package
+        run: ditto -c -k --keepParent package/s25client.app s25rttr_macos_arm64.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: s25rttr_macos_arm64
+          path: s25rttr_macos_arm64.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [windows, macos]
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Move tag to current commit
+        run: |
+          git tag -f latest
+          git push -f origin latest
+      - name: Get commit info
+        run: |
+          {
+            echo "COMMIT_INFO<<EOF"
+            git log -1 --format='%h %s'
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          body: |
+            Build of the latest commit on master: ${{ env.COMMIT_INFO }}
+
+            Copy the folders `DATA` and `GFX` from The Settlers II Gold:
+            - Windows: next to `s25client.exe` (where the file `put your S2-Installation in here` is) and start `s25client.exe`
+            - macOS: start `s25client.app`, it tells you where to put them.
+              The app is not signed by Apple: run `xattr -dr com.apple.quarantine s25client.app` once after unpacking.
+          files: packages/*.zip
+          fail_on_unmatched_files: true

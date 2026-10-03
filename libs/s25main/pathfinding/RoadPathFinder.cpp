@@ -4,8 +4,8 @@
 
 #include "RoadPathFinder.h"
 #include "EventManager.h"
-#include "RttrForeachPt.h"
 #include "GlobalGameSettings.h"
+#include "RttrForeachPt.h"
 #include "addons/const_addons.h"
 #include "buildings/nobHarborBuilding.h"
 #include "pathfinding/OpenListPrioQueue.h"
@@ -319,8 +319,8 @@ bool RoadPathFinder::FindPath(const noRoadNode& start, const noRoadNode& goal, c
             return FindPathImpl(start, goal, max, AdditonalCosts::None(), SegmentConstraints::AvoidSegment(forbidden),
                                 length, firstDir, firstNodePos);
         else
-            return FindPathImpl(start, goal, max, AdditonalCosts::None(), SegmentConstraints::None(), length,
-                                firstDir, firstNodePos);
+            return FindPathImpl(start, goal, max, AdditonalCosts::None(), SegmentConstraints::None(), length, firstDir,
+                                firstNodePos);
     } else
     {
         if(forbidden)

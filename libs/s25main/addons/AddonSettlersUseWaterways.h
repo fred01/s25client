@@ -11,7 +11,6 @@ class AddonSettlersUseWaterways : public AddonBool
 public:
     AddonSettlersUseWaterways()
         : AddonBool(AddonId::SETTLERS_USE_WATERWAYS, AddonGroup::Economy | AddonGroup::GamePlay,
-                    _("Settlers use waterways"),
-                    _("Settlers can travel along waterways by boat, not only wares."))
+                    _("Settlers use waterways"), _("Settlers can travel along waterways by boat, not only wares."))
     {}
 };

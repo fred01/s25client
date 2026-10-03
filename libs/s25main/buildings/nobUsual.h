@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "noBuilding.h"
 #include "helpers/OptionalEnum.h"
+#include "noBuilding.h"
 #include "gameTypes/GoodTypes.h"
 #include <array>
 #include <list>
