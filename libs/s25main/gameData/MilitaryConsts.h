@@ -76,6 +76,11 @@ constexpr helpers::EnumArray<std::array<DrawPoint, NUM_MILITARY_BLDS>, Nation> B
 constexpr std::array HITPOINTS = {3, 4, 5, 6, 7};
 static_assert(HITPOINTS.size() == NUM_SOLDIER_RANKS);
 
+/// Max distance between an attacker and a military building so that the building sends an aggressive defender
+constexpr unsigned MAX_AGGRESSIVE_DEFENDER_DISTANCE = 14;
+/// Max distance between a catapult and the buildings it shoots at
+constexpr unsigned CATAPULT_RANGE = 13;
+
 /// Max distance for an attacker to reach a building and join in capturing
 constexpr unsigned MAX_FAR_AWAY_CAPTURING_DISTANCE = 15;
 

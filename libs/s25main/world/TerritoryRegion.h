@@ -28,6 +28,8 @@ public:
 
     /// Adds the territory of the building
     void CalcTerritoryOfBuilding(const noBaseBuilding& building);
+    /// Adds the territory of a building of the player at bldPos holding the given radius
+    void CalcTerritoryOfBuilding(MapPoint bldPos, unsigned char player, unsigned radius);
 
     unsigned GetIdx(const Position& pt) const;
     Position GetPosFromMapPos(const MapPoint& pt) const;

@@ -42,6 +42,12 @@ constexpr auto gfs_to_duration(const unsigned gfs)
 
 /// Reichweite der Bergarbeiter
 constexpr unsigned MINER_RADIUS = 2;
+/// Radius around the flag of a shipyard in which ships are built
+constexpr unsigned SHIPWRIGHT_RADIUS = 8;
+/// Radius around the building in which a hunter looks for animals
+constexpr unsigned HUNTER_SEARCH_RADIUS = 19;
+/// Radius around the building in which a skinner looks for dead animals
+constexpr unsigned SKINNER_SEARCH_RADIUS = 19;
 
 /// Konstante für die Pfadrichtung bei einer Schiffsverbindung
 constexpr unsigned char SHIP_DIR = 100;

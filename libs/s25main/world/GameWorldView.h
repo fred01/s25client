@@ -27,6 +27,15 @@ public:
     virtual void onDraw(const MapPoint& pt, const DrawPoint& displayPt) = 0;
 };
 
+/// Something (usually a window) which wants the ranges of a building shown on the map
+class IBuildingRangeSource
+{
+public:
+    virtual ~IBuildingRangeSource() = default;
+    /// Return the building (or building site) whose ranges should be shown or nullptr to show nothing
+    virtual const noBaseBuilding* GetRangeBuilding() const = 0;
+};
+
 struct ObjectBetweenLines;
 
 class GameWorldView
@@ -38,6 +47,8 @@ class GameWorldView
 
     /// Callbacks called when node is printed
     std::vector<IDrawNodeCallback*> drawNodeCallbacks;
+    /// Sources of buildings whose ranges are shown
+    std::vector<const IBuildingRangeSource*> buildingRangeSources;
 
     /// Show building quality icons
     bool show_bq;
@@ -117,6 +128,10 @@ public:
     void AddDrawNodeCallback(IDrawNodeCallback* newCallback);
     void RemoveDrawNodeCallback(IDrawNodeCallback* callbackToRemove);
 
+    /// Show the ranges of the building of the source on the map while it is registered
+    void AddBuildingRangeSource(const IBuildingRangeSource* source);
+    void RemoveBuildingRangeSource(const IBuildingRangeSource* source);
+
     /// Gibt selektierten Punkt zurück
     MapPoint GetSelectedPt() const { return selPt; }
 
@@ -132,6 +147,8 @@ public:
 
 private:
     void CalcFxLx();
+    /// Draw the ranges of the buildings of all range sources over the terrain
+    void DrawBuildingRanges(const TerrainRenderer& terrainRenderer);
     void DrawBoundaryStone(const MapPoint& pt, DrawPoint pos, Visibility vis);
     void DrawResource(const MapPoint& pt, DrawPoint curPos, Cheats::ResourceRevealMode resRevealMode);
     void DrawObject(const MapPoint& pt, const DrawPoint& curPos) const;

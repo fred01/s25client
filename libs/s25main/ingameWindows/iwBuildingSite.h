@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "BuildingRangeHighlight.h"
 #include "IngameWindow.h"
 
 class noBuildingSite;
@@ -21,4 +22,5 @@ protected:
 private:
     GameWorldView& gwv;
     const noBuildingSite* buildingsite;
+    BuildingRangeHighlight rangeHighlight;
 };

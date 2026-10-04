@@ -11,6 +11,7 @@
 #include "SoundManager.h"
 #include "TradePathCache.h"
 #include "addons/const_addons.h"
+#include "buildings/noBuildingSite.h"
 #include "buildings/nobHarborBuilding.h"
 #include "buildings/nobMilitary.h"
 #include "figures/nofPassiveSoldier.h"
@@ -23,6 +24,7 @@
 #include "pathfinding/FreePathFinder.h"
 #include "pathfinding/RoadPathFinder.h"
 #include "pathfinding/ShipPathData.h"
+#include "world/TerritoryRegion.h"
 #include "nodeObjs/noFlag.h"
 #include "gameData/BuildingProperties.h"
 #include "gameData/GameConsts.h"
@@ -238,6 +240,131 @@ bool GameWorldBase::IsMilitaryBuildingOnNode(const MapPoint pt, bool attackBldsO
 sortedMilitaryBlds GameWorldBase::LookForMilitaryBuildings(const MapPoint pt, unsigned short radius) const
 {
     return militarySquares.GetBuildingsInRange(pt, radius);
+}
+
+TerritoryRegion GameWorldBase::CreateTerritoryRegion(const noBaseBuilding& building, unsigned radius,
+                                                     TerritoryChangeReason reason, unsigned previewRadius) const
+{
+    const MapPoint bldPos = building.GetPos();
+
+    // Span at most half the map size (assert even sizes, given due to layout)
+    RTTR_Assert(GetWidth() % 2 == 0);
+    RTTR_Assert(GetHeight() % 2 == 0);
+    Extent halfSize(GetSize() / 2u);
+    Extent radius2D = elMin(Extent::all(radius), halfSize);
+
+    // Koordinaten erzeugen für TerritoryRegion
+    const Position startPt = Position(bldPos) - radius2D;
+    // If we want to check the same number of points right of bld as left we need a +1.
+    // But we can't check more than the whole map.
+    const Extent size = elMin(2u * radius2D + Extent(1, 1), Extent(GetSize()));
+    TerritoryRegion region(startPt, size, *this);
+
+    // Alle Gebäude ihr Terrain in der Nähe neu berechnen
+    sortedMilitaryBlds buildings = LookForMilitaryBuildings(bldPos, 3);
+    for(const nobBaseMilitary* milBld : buildings)
+    {
+        if(reason != TerritoryChangeReason::Destroyed || milBld != &building)
+            region.CalcTerritoryOfBuilding(*milBld);
+    }
+
+    // Baustellen von Häfen mit einschließen
+    for(const noBuildingSite* bldSite : harbor_building_sites_from_sea)
+    {
+        if(reason != TerritoryChangeReason::Destroyed || bldSite != &building)
+            region.CalcTerritoryOfBuilding(*bldSite);
+    }
+    if(previewRadius > 0)
+        region.CalcTerritoryOfBuilding(bldPos, building.GetPlayer(), previewRadius);
+    CleanTerritoryRegion(region, reason, building);
+
+    return region;
+}
+
+void GameWorldBase::CleanTerritoryRegion(TerritoryRegion& region, TerritoryChangeReason reason,
+                                         const noBaseBuilding& triggerBld) const
+{
+    if(GetGGS().isEnabled(AddonId::NO_ALLIED_PUSH))
+    {
+        const bool isHq = triggerBld.GetBuildingType() == BuildingType::Headquarters;
+        const auto newOwnerOfTriggerBld = region.GetOwner(region.GetPosFromMapPos(triggerBld.GetPos()));
+        // An HQ can be placed independently of the current owner.
+        // So ensure the HQ position is always considered to belong to the HQ owner
+        // if the TerritoryChangeReason is Build
+        const auto ownerOfTriggerBld =
+          isHq && reason == TerritoryChangeReason::Build ? newOwnerOfTriggerBld : GetNode(triggerBld.GetPos()).owner;
+
+        RTTR_FOREACH_PT(Position, region.size)
+        {
+            const MapPoint curMapPt = MakeMapPoint(pt + region.startPt);
+            const auto oldOwner = GetNode(curMapPt).owner;
+            const auto newOwner = region.GetOwner(pt);
+
+            // If nothing changed, there is nothing to do (ownerChanged was already initialized)
+            if(oldOwner == newOwner)
+                continue;
+
+            const bool ownersAllied = oldOwner > 0 && newOwner > 0 && GetPlayer(oldOwner - 1).IsAlly(newOwner - 1);
+            if(
+              // rule 1: only take territory from an ally if that ally loses a building
+              // special case: headquarter can take territory
+              (ownersAllied && (ownerOfTriggerBld != oldOwner || reason == TerritoryChangeReason::Build) && !isHq) ||
+              // rule 2: do not gain territory when you lose a building (captured or destroyed)
+              (ownerOfTriggerBld == newOwner && reason != TerritoryChangeReason::Build) ||
+              // rule 3: do not lose territory when you gain a building (newBuilt or capture)
+              ((ownerOfTriggerBld == oldOwner && oldOwner > 0 && reason == TerritoryChangeReason::Build)
+               || (newOwnerOfTriggerBld == oldOwner && reason == TerritoryChangeReason::Captured)))
+            {
+                region.SetOwner(pt, oldOwner);
+            }
+        }
+    }
+
+    // "Cosmetics": Remove points that do not border to territory to avoid edges of border stones
+    RTTR_FOREACH_PT(Position, region.size)
+    {
+        uint8_t owner = region.GetOwner(pt);
+        if(!owner)
+            continue;
+        // Check if any neighbour is fully surrounded by player territory
+        bool isPlayerTerritoryNear = false;
+        for(const auto d : helpers::EnumRange<Direction>{})
+        {
+            Position neighbour = ::GetNeighbour(pt + region.startPt, d);
+            if(region.SafeGetOwner(neighbour - region.startPt) != owner)
+                continue;
+            // Don't check this point as it is always true
+            const Direction exceptDir = d + 3u;
+            if(region.WillBePlayerTerritory(neighbour, owner, exceptDir))
+            {
+                isPlayerTerritoryNear = true;
+                break;
+            }
+        }
+
+        // All good?
+        if(isPlayerTerritoryNear)
+            continue;
+        // No neighbouring player territory found. Look for another
+        uint8_t newOwner = 0;
+        for(const auto d : helpers::EnumRange<Direction>{})
+        {
+            Position neighbour = ::GetNeighbour(pt + region.startPt, d);
+            uint8_t nbOwner = region.SafeGetOwner(neighbour - region.startPt);
+            // No or same player?
+            if(!nbOwner || nbOwner == owner)
+                continue;
+            // Don't check this point as it would always fail
+            const Direction exceptDir = d + 3u;
+            // First one found gets it
+            if(region.WillBePlayerTerritory(neighbour, nbOwner, exceptDir))
+            {
+                newOwner = nbOwner;
+                break;
+            }
+        }
+        region.SetOwner(pt, newOwner);
+    }
 }
 
 noFlag* GameWorldBase::GetRoadFlag(MapPoint pt, Direction& dir, const helpers::OptionalEnum<Direction> prevDir)

@@ -21,6 +21,7 @@
 #include "ogl/FontStyle.h"
 #include "ogl/glArchivItem_Bitmap.h"
 #include "ogl/glFont.h"
+#include "world/BuildingRanges.h"
 #include "world/GameWorldBase.h"
 #include "world/GameWorldView.h"
 #include "gameData/BuildingConsts.h"
@@ -33,7 +34,7 @@ constexpr unsigned HEIGHT_OF_ROW = 38;
 iwMilitaryBuilding::iwMilitaryBuilding(GameWorldView& gwv, GameCommandFactory& gcFactory, nobMilitary* const building)
     : IngameWindow(CGI_BUILDING + MapBase::CreateGUIID(building->GetPos()), IngameWindow::posAtMouse, Extent(226, 194),
                    _(BUILDING_NAMES[building->GetBuildingType()]), LOADER.GetImageN("resource", 41)),
-      gwv(gwv), gcFactory(gcFactory), building(building)
+      gwv(gwv), gcFactory(gcFactory), building(building), rangeHighlight(gwv, *this, *building)
 {
     const auto addonStatusMilitaryControl = gwv.GetWorld().GetGGS().getSelection(AddonId::MILITARY_CONTROL);
 
@@ -223,6 +224,14 @@ void iwMilitaryBuilding::DrawContent()
         for(unsigned i = 0; i < NUM_SOLDIER_RANKS; ++i)
             NormalFont->Draw(GetDrawPos() + DrawPoint(GetSize().x / 2 - 12, btOffsetY + Y_SPACING * i),
                              std::to_string(building->GetTroopLimit(i)), FontStyle::LEFT, COLOR_YELLOW);
+    }
+
+    // Warn if destroying the building would not lose any land, i.e. it is not needed for the territory
+    if(!building->IsNewBuilt() && !BuildingRanges(gwv.GetWorld(), *building).HasTerritoryChange())
+    {
+        // Right above the buttons and left of the "go to" buttons at the right border
+        const DrawPoint textPos = GetDrawPos() + DrawPoint((GetSize().x - 31) / 2, GetSize().y - 56);
+        NormalFont->Draw(textPos, _("Holds no territory"), FontStyle::CENTER | FontStyle::VCENTER, COLOR_ORANGE);
     }
 }
 

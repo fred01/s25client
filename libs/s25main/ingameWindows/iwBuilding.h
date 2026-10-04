@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "BuildingRangeHighlight.h"
 #include "IngameWindow.h"
 
 class nobUsual;
@@ -16,6 +17,7 @@ protected:
     GameWorldView& gwv;
     GameCommandFactory& gcFactory;
     nobUsual* const building; /// Das zugehörige Gebäudeobjekt
+    BuildingRangeHighlight rangeHighlight;
 
 public:
     iwBuilding(GameWorldView& gwv, GameCommandFactory& gcFactory, nobUsual* building, Extent extent = Extent(226, 194));

@@ -966,10 +966,7 @@ unsigned nobMilitary::GetNumSoldiersForAttack(const MapPoint dest) const
     // Soldaten ausrechnen, wie viel man davon nehmen könnte, je nachdem wie viele in den
     // Militäreinstellungen zum Angriff eingestellt wurden
 
-    unsigned short soldiers_count =
-      (GetNumTroops() > 1) ?
-        ((GetNumTroops() - 1) * world->GetPlayer(GetPlayer()).GetMilitarySetting(3) / MILITARY_SETTINGS_SCALE[3]) :
-        0;
+    unsigned short soldiers_count = GetNumAttackersOfTroops(GetNumTroops(), world->GetPlayer(GetPlayer()));
 
     unsigned distance = world->CalcDistance(pos, dest);
 
@@ -991,6 +988,27 @@ unsigned nobMilitary::GetNumSoldiersForAttack(const MapPoint dest) const
         return soldiers_count;
     else
         return 0;
+}
+
+unsigned nobMilitary::GetNumAttackersOfTroops(const unsigned numTroops, const GamePlayer& owner)
+{
+    // One soldier always stays at home
+    if(numTroops <= 1)
+        return 0;
+    return (numTroops - 1) * owner.GetMilitarySetting(3) / MILITARY_SETTINGS_SCALE[3];
+}
+
+unsigned nobMilitary::GetMaxAttackDistance(const unsigned numAttackers)
+{
+    // For every EXTENDED_ATTACKING_DISTANCE beyond BASE_ATTACKING_DISTANCE one soldier less can attack
+    if(numAttackers == 0)
+        return 0;
+    return BASE_ATTACKING_DISTANCE + (numAttackers - 1) * EXTENDED_ATTACKING_DISTANCE;
+}
+
+unsigned nobMilitary::GetMaxAttackDistance() const
+{
+    return GetMaxAttackDistance(GetNumAttackersOfTroops(GetNumTroops(), world->GetPlayer(GetPlayer())));
 }
 
 /// Gibt die Soldaten zurück, die für einen Angriff auf ein bestimmtes Ziel zur Verfügung stehen

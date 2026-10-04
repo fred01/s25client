@@ -19,7 +19,7 @@ iwBuildingSite::iwBuildingSite(GameWorldView& gwv, const noBuildingSite* const b
     : IngameWindow(CGI_BUILDING + MapBase::CreateGUIID(buildingsite->GetPos()), IngameWindow::posAtMouse,
                    Extent(226, 194), _(BUILDING_NAMES[buildingsite->GetBuildingType()]),
                    LOADER.GetImageN("resource", 41)),
-      gwv(gwv), buildingsite(buildingsite)
+      gwv(gwv), buildingsite(buildingsite), rangeHighlight(gwv, *this, *buildingsite)
 {
     // Bild des Gebäudes
     AddImage(0, DrawPoint(113, 130), &buildingsite->GetBuildingImage());

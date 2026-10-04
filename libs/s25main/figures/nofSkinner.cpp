@@ -16,6 +16,7 @@
 #include "random/Random.h"
 #include "world/GameWorld.h"
 #include "nodeObjs/noAnimal.h"
+#include "gameData/GameConsts.h"
 #include "gameData/JobConsts.h"
 
 using namespace leatheraddon;
@@ -187,7 +188,6 @@ void nofSkinner::TryStartSkinning()
         HandleStateWaiting1();
     else
     {
-        const int ANIMAL_RADIUS = 19;
         const auto pointToAnimal = [world = this->world](const MapPoint pt, unsigned) -> noAnimal* {
             for(auto& figure : world->GetFigures(pt))
             {
@@ -204,7 +204,7 @@ void nofSkinner::TryStartSkinning()
         };
 
         const auto available_animals =
-          world->GetPointsInRadius(pos, ANIMAL_RADIUS, pointToAnimal, canAnimalBeSkinned, true);
+          world->GetPointsInRadius(pos, SKINNER_SEARCH_RADIUS, pointToAnimal, canAnimalBeSkinned, true);
 
         if(!available_animals.empty())
         {

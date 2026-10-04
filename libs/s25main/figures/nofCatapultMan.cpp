@@ -17,6 +17,7 @@
 #include "world/GameWorld.h"
 #include "gameData/JobConsts.h"
 #include "gameData/MapConsts.h"
+#include "gameData/MilitaryConsts.h"
 
 const std::array<DrawPoint, 6> STONE_STARTS = {{{-4, -48}, {-3, -47}, {-13, -47}, {-11, -48}, {-13, -47}, {-2, -47}}};
 
@@ -121,7 +122,7 @@ void nofCatapultMan::HandleDerivedEvent(const unsigned /*id*/)
                         unsigned distance = world->CalcDistance(pos, building->GetPos());
 
                         // Entfernung nicht zu hoch?
-                        if(distance < 14)
+                        if(distance <= CATAPULT_RANGE)
                         {
                             // Mit in die Liste aufnehmen
                             possibleTargets.push_back(PossibleTarget(building->GetPos(), distance));

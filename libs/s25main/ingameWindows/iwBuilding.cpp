@@ -32,7 +32,7 @@ const unsigned IODAT_SHIP_ID = 218;
 iwBuilding::iwBuilding(GameWorldView& gwv, GameCommandFactory& gcFactory, nobUsual* const building, Extent extent)
     : IngameWindow(CGI_BUILDING + MapBase::CreateGUIID(building->GetPos()), IngameWindow::posAtMouse, extent,
                    _(BUILDING_NAMES[building->GetBuildingType()]), LOADER.GetImageN("resource", 41)),
-      gwv(gwv), gcFactory(gcFactory), building(building)
+      gwv(gwv), gcFactory(gcFactory), building(building), rangeHighlight(gwv, *this, *building)
 {
     // Arbeitersymbol
     AddImage(0, DrawPoint(28, 39), LOADER.GetMapTexture(2298));

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "BuildingRangeHighlight.h"
 #include "IngameWindow.h"
 
 class nobMilitary;
@@ -17,6 +18,7 @@ private:
     GameWorldView& gwv;
     GameCommandFactory& gcFactory;
     nobMilitary* const building;
+    BuildingRangeHighlight rangeHighlight;
 
 public:
     iwMilitaryBuilding(GameWorldView& gwv, GameCommandFactory& gcFactory, nobMilitary* building);

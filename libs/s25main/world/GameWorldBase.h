@@ -29,6 +29,7 @@ class noFlag;
 class nofPassiveSoldier;
 class RoadPathFinder;
 class SoundManager;
+class TerritoryRegion;
 
 constexpr Direction getOppositeDir(const RoadDir roadDir) noexcept
 {
@@ -47,6 +48,13 @@ constexpr Direction toDirection(const RoadDir roadDir) noexcept
                   "Directions don't match");
     return Direction(rttr::enum_cast(roadDir) + 3u);
 }
+
+enum class TerritoryChangeReason
+{
+    Build,     /// Building was build (and occupied for the first time)
+    Destroyed, /// Building destroyed
+    Captured   /// Owner changed
+};
 
 /// Grundlegende Klasse, die die Gamewelt darstellt, enth�lt nur deren Daten
 class GameWorldBase : public World
@@ -109,6 +117,13 @@ public:
     /// Erstellt eine Liste mit allen Milit�rgeb�uden in der Umgebung, radius bestimmt wie viele K�stchen nach einer
     /// Richtung im Umkreis
     sortedMilitaryBlds LookForMilitaryBuildings(MapPoint pt, unsigned short radius) const;
+    /// Creates a region with territories marked around a building with the given radius
+    /// If previewRadius is set the building is treated as holding territory with that radius (e.g. a building site)
+    TerritoryRegion CreateTerritoryRegion(const noBaseBuilding& building, unsigned radius,
+                                          TerritoryChangeReason reason, unsigned previewRadius = 0) const;
+    /// Cleans the region (removes edges of terrain and applies the allied border push addon
+    void CleanTerritoryRegion(TerritoryRegion& region, TerritoryChangeReason reason,
+                              const noBaseBuilding& triggerBld) const;
 
     /// Finds a path for figures. Returns first direction to walk in if found
     helpers::OptionalEnum<Direction> FindHumanPath(MapPoint start, MapPoint dest, unsigned max_route = 0xFFFFFFFF,

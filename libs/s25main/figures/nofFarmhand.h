@@ -5,6 +5,7 @@
 #pragma once
 
 #include "nofBuildingWorker.h"
+class GlobalGameSettings;
 class SerializedGameData;
 class nobUsual;
 
@@ -55,6 +56,8 @@ public:
     nofFarmhand(SerializedGameData& sgd, unsigned obj_id);
 
     static unsigned GetWorkRadius(Job job);
+    /// Return the radius around the workplace in which a worker of the given job works
+    static unsigned GetWorkRadius(Job job, const GlobalGameSettings& ggs);
 
     void Serialize(SerializedGameData& sgd) const override;
 

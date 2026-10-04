@@ -25,7 +25,6 @@ nofShipWright::nofShipWright(const MapPoint pos, const unsigned char player, nob
     RTTR_Assert(!workplace || dynamic_cast<nobShipYard*>(workplace));
 }
 
-const unsigned SHIPWRIGHT_RADIUS = 8;
 const unsigned SHIPWRIGHT_WALKING_DISTANCE = 15;
 /// Arbeitszeit des Schiffsbauers beim Bauen von großen Schiffen
 const unsigned WORKING_TIME_SHIPS = 70;

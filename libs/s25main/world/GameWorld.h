@@ -22,13 +22,6 @@ class RoadSegment;
 class TerritoryRegion;
 class TradePathCache;
 
-enum class TerritoryChangeReason
-{
-    Build,     /// Building was build (and occupied for the first time)
-    Destroyed, /// Building destroyed
-    Captured   /// Owner changed
-};
-
 /// "Interface-Klasse" für das Spiel
 class GameWorld : public GameWorldBase
 {
@@ -52,13 +45,6 @@ class GameWorld : public GameWorldBase
     void RecalcVisibility(MapPoint pt, unsigned char player, const noBaseBuilding* exception);
     /// Setzt Punkt auf jeden Fall auf sichtbar
     void MakeVisible(MapPoint pt, unsigned char player);
-
-    /// Creates a region with territories marked around a building with the given radius
-    TerritoryRegion CreateTerritoryRegion(const noBaseBuilding& building, unsigned radius,
-                                          TerritoryChangeReason reason) const;
-    /// Cleans the region (removes edges of terrain and applies the allied border push addon
-    void CleanTerritoryRegion(TerritoryRegion& region, TerritoryChangeReason reason,
-                              const noBaseBuilding& triggerBld) const;
 
 public:
     GameWorld(const std::vector<PlayerInfo>& players, const GlobalGameSettings& gameSettings, EventManager& em);

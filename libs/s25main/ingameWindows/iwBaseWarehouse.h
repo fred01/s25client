@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "BuildingRangeHighlight.h"
 #include "IDataChangedListener.h"
 #include "iwWares.h"
 
@@ -19,6 +20,9 @@ class iwBaseWarehouse : public iwWares, public IDataChangedListener
 
 protected:
     nobBaseWarehouse* wh; /// Pointer zum entsprechenden Lagerhaus
+
+private:
+    BuildingRangeHighlight rangeHighlight;
 
 public:
     iwBaseWarehouse(GameWorldView& gwv, GameCommandFactory& gcFactory, nobBaseWarehouse* wh);

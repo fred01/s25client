@@ -11,6 +11,7 @@
 #include <vector>
 
 class GameEvent;
+class GamePlayer;
 class nobHarborBuilding;
 class nofActiveSoldier;
 class nofAggressiveDefender;
@@ -183,6 +184,12 @@ public:
 
     /// Gibt die Anzahl der Soldaten zurück, die für einen Angriff auf ein bestimmtes Ziel zur Verfügung stehen
     unsigned GetNumSoldiersForAttack(MapPoint dest) const;
+    /// Return how many of numTroops soldiers in a building may attack according to the owners military settings
+    static unsigned GetNumAttackersOfTroops(unsigned numTroops, const GamePlayer& owner);
+    /// Return the max distance to a building which can be attacked by the given number of soldiers (0 if none)
+    static unsigned GetMaxAttackDistance(unsigned numAttackers);
+    /// Return the max distance to a building which can be attacked from this building with the current troops
+    unsigned GetMaxAttackDistance() const;
     /// Gibt die Soldaten zurück, die für einen Angriff auf ein bestimmtes Ziel zur Verfügung stehen
     std::vector<nofPassiveSoldier*> GetSoldiersForAttack(MapPoint dest) const;
     /// Gibt die Stärke der Soldaten zurück, die für einen Angriff auf ein bestimmtes Ziel zur Verfügung stehen

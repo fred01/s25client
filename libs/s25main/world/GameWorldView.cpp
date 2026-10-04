@@ -11,6 +11,7 @@
 #include "GlobalGameSettings.h"
 #include "Loader.h"
 #include "MapGeometry.h"
+#include "RttrForeachPt.h"
 #include "Settings.h"
 #include "addons/AddonMaxWaterwayLength.h"
 #include "buildings/noBuildingSite.h"
@@ -19,6 +20,7 @@
 #include "drivers/VideoDriverWrapper.h"
 #include "figures/noFigure.h"
 #include "helpers/EnumArray.h"
+#include "helpers/EnumRange.h"
 #include "helpers/Range.h"
 #include "helpers/containerUtils.h"
 #include "helpers/toString.h"
@@ -26,6 +28,7 @@
 #include "ogl/glArchivItem_Bitmap.h"
 #include "ogl/glFont.h"
 #include "ogl/glSmartBitmap.h"
+#include "world/BuildingRanges.h"
 #include "world/GameWorldBase.h"
 #include "world/GameWorldViewer.h"
 #include "gameTypes/RoadBuildState.h"
@@ -36,6 +39,7 @@
 #include <glad/glad.h>
 #include <boost/format.hpp>
 #include <cmath>
+#include <optional>
 
 GameWorldView::GameWorldView(const GameWorldViewer& gwv, const Position& pos, const Extent& size)
     : selPt(0, 0), show_bq(SETTINGS.ingame.showBQ), show_names(SETTINGS.ingame.showNames),
@@ -179,6 +183,8 @@ void GameWorldView::Draw(const RoadBuildState& rb, const MapPoint selected, bool
     glTranslatef(static_cast<GLfloat>(-offset.x), static_cast<GLfloat>(-offset.y), 0.0f);
     const TerrainRenderer& terrainRenderer = gwv.GetTerrainRenderer();
     terrainRenderer.Draw(GetFirstPt(), GetLastPt(), gwv, water);
+    if(!buildingRangeSources.empty())
+        DrawBuildingRanges(terrainRenderer);
     glTranslatef(static_cast<GLfloat>(offset.x), static_cast<GLfloat>(offset.y), 0.0f);
 
     const auto& world = GetWorld();
@@ -728,6 +734,137 @@ void GameWorldView::RemoveDrawNodeCallback(IDrawNodeCallback* callbackToRemove)
     auto itPos = helpers::find(drawNodeCallbacks, callbackToRemove);
     RTTR_Assert(itPos != drawNodeCallbacks.end());
     drawNodeCallbacks.erase(itPos);
+}
+
+void GameWorldView::AddBuildingRangeSource(const IBuildingRangeSource* source)
+{
+    RTTR_Assert(source);
+    buildingRangeSources.push_back(source);
+}
+
+void GameWorldView::RemoveBuildingRangeSource(const IBuildingRangeSource* source)
+{
+    auto itPos = helpers::find(buildingRangeSources, source);
+    RTTR_Assert(itPos != buildingRangeSources.end());
+    buildingRangeSources.erase(itPos);
+}
+
+namespace {
+struct RangeColor
+{
+    uint8_t r, g, b;
+    /// Alpha inside the range and at its border
+    uint8_t fillAlpha, borderAlpha;
+};
+
+constexpr helpers::EnumArray<RangeColor, BuildingRangeKind> RANGE_COLORS = {{
+  {255, 255, 255, 60, 150}, // Work
+  {255, 215, 0, 60, 150},   // Attack
+  {40, 110, 255, 60, 150},  // Defense
+  {130, 230, 130, 45, 110}, // Territory
+  {0, 210, 40, 100, 170},   // TerritoryChange
+}};
+} // namespace
+
+void GameWorldView::DrawBuildingRanges(const TerrainRenderer& terrainRenderer)
+{
+    std::vector<BuildingRanges> allRanges;
+    for(const IBuildingRangeSource* source : buildingRangeSources)
+    {
+        if(const noBaseBuilding* bld = source->GetRangeBuilding())
+            allRanges.emplace_back(GetWorld(), *bld);
+    }
+    if(allRanges.empty())
+        return;
+
+    struct Vertex
+    {
+        PointF pos;
+        std::optional<BuildingRangeKind> kind;
+        bool isBorder = false;
+    };
+    // Vertices of the drawn triangles plus a margin to check their neighbours
+    const Position gridStart(firstPt.x - 3, firstPt.y - 1);
+    const Extent gridSize(lastPt.x - firstPt.x + 6, lastPt.y - firstPt.y + 4);
+    std::vector<Vertex> vertices(prodOfComponents(gridSize));
+    const auto getVertex = [&](const Position& pt) -> Vertex& {
+        const Position gridPt = pt - gridStart;
+        return vertices[gridPt.y * gridSize.x + gridPt.x];
+    };
+
+    RTTR_FOREACH_PT(Position, gridSize)
+    {
+        const Position viewPt = pt + gridStart;
+        Position posOffset;
+        const MapPoint mapPt = terrainRenderer.ConvertCoords(viewPt, &posOffset);
+        Vertex& vertex = getVertex(viewPt);
+        vertex.pos = terrainRenderer.GetVertexPos(mapPt) + PointF(posOffset);
+        if(gwv.GetVisibility(mapPt) == Visibility::Invisible)
+            continue;
+        for(const BuildingRanges& ranges : allRanges)
+        {
+            const auto kind = ranges.GetKind(mapPt);
+            if(kind && (!vertex.kind || *kind > *vertex.kind))
+                vertex.kind = kind;
+        }
+    }
+    // A vertex is at the border of its range if any neighbour is not in a range with at least the same priority
+    for(const int y : helpers::range(gridStart.y + 1, gridStart.y + static_cast<int>(gridSize.y) - 1))
+    {
+        for(const int x : helpers::range(gridStart.x + 1, gridStart.x + static_cast<int>(gridSize.x) - 1))
+        {
+            Vertex& vertex = getVertex(Position(x, y));
+            if(!vertex.kind)
+                continue;
+            for(const auto dir : helpers::EnumRange<Direction>{})
+            {
+                const auto& nbKind = getVertex(::GetNeighbour(Position(x, y), dir)).kind;
+                if(!nbKind || *nbKind < *vertex.kind)
+                {
+                    vertex.isBorder = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_TRIANGLES);
+    // Draws the vertex in the color of its range or fully transparent in the color of the triangle if outside
+    const auto drawVertex = [](const Vertex& vertex, BuildingRangeKind triangleKind) {
+        const RangeColor& color = RANGE_COLORS[vertex.kind.value_or(triangleKind)];
+        const uint8_t alpha = !vertex.kind ? 0 : (vertex.isBorder ? color.borderAlpha : color.fillAlpha);
+        glColor4ub(color.r, color.g, color.b, alpha);
+        glVertex2f(vertex.pos.x, vertex.pos.y);
+    };
+    const auto drawTriangle = [&](const Vertex& v1, const Vertex& v2, const Vertex& v3) {
+        std::optional<BuildingRangeKind> kind;
+        for(const Vertex* vertex : {&v1, &v2, &v3})
+        {
+            if(vertex->kind && (!kind || *vertex->kind > *kind))
+                kind = vertex->kind;
+        }
+        if(!kind)
+            return;
+        drawVertex(v1, *kind);
+        drawVertex(v2, *kind);
+        drawVertex(v3, *kind);
+    };
+    // Same triangles as the terrain
+    for(const int y : helpers::range(firstPt.y, lastPt.y + 1))
+    {
+        for(const int x : helpers::range(firstPt.x - 1, lastPt.x + 1))
+        {
+            const Position pt(x, y);
+            const Vertex& vertex = getVertex(pt);
+            const Vertex& southEast = getVertex(::GetNeighbour(pt, Direction::SouthEast));
+            drawTriangle(vertex, getVertex(::GetNeighbour(pt, Direction::SouthWest)), southEast);
+            drawTriangle(vertex, southEast, getVertex(::GetNeighbour(pt, Direction::East)));
+        }
+    }
+    glEnd();
+    glColor4ub(255, 255, 255, 255);
+    glEnable(GL_TEXTURE_2D);
 }
 
 void GameWorldView::CalcFxLx()

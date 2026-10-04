@@ -132,7 +132,7 @@ void nofHunter::HandleDerivedEvent(unsigned /*id*/)
 void nofHunter::TryStartHunting()
 {
     // Find animals in a square around building (actually should be circle, but animals are moving anyway)
-    const int SQUARE_SIZE = 19;
+    const int SQUARE_SIZE = static_cast<int>(HUNTER_SEARCH_RADIUS);
 
     // Liste mit den gefundenen Tieren
     std::vector<noAnimal*> available_animals;

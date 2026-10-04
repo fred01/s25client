@@ -47,7 +47,7 @@ iwBaseWarehouse::iwBaseWarehouse(GameWorldView& gwv, GameCommandFactory& gcFacto
     : iwWares(CGI_BUILDING + MapBase::CreateGUIID(wh->GetPos()), IngameWindow::posAtMouse, 40,
               _(BUILDING_NAMES[wh->GetBuildingType()]), true, NormalFont, wh->GetInventory(),
               gwv.GetWorld().GetPlayer(wh->GetPlayer())),
-      gwv(gwv), gcFactory(gcFactory), wh(wh)
+      gwv(gwv), gcFactory(gcFactory), wh(wh), rangeHighlight(gwv, *this, *wh)
 {
     wh->AddListener(this);
 

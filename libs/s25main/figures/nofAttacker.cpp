@@ -21,6 +21,7 @@
 #include "nodeObjs/noFlag.h"
 #include "nodeObjs/noShip.h"
 #include "gameData/BuildingProperties.h"
+#include "gameData/MilitaryConsts.h"
 
 /// The time the attacker stands at the buildings flag before it starts blocking the road
 /// Only used for AttackingWaitingfordefender
@@ -529,15 +530,14 @@ void nofAttacker::TryToOrderAggressiveDefender()
 
 void nofAttacker::OrderAggressiveDefender()
 {
-    // Any military building in at most this distance could send a defender
-    constexpr auto maxDistance = 14;
+    // Any military building in at most MAX_AGGRESSIVE_DEFENDER_DISTANCE could send a defender
     sortedMilitaryBlds buildings = world->LookForMilitaryBuildings(pos, 2);
     for(nobBaseMilitary* bld : buildings)
     {
         // Exclude HQs unless the one being attacked
         if(bld->GetBuildingType() == BuildingType::Headquarters && bld != attacked_goal)
             continue;
-        if(world->CalcDistance(pos, bld->GetPos()) > maxDistance)
+        if(world->CalcDistance(pos, bld->GetPos()) > MAX_AGGRESSIVE_DEFENDER_DISTANCE)
             continue;
         const unsigned bldOwnerId = bld->GetPlayer();
         if(canPlayerSendAggDefender[bldOwnerId] == SendDefender::No)
