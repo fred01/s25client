@@ -471,6 +471,8 @@ int RunProgram(po::variables_map& options)
 
         // Spiel beenden
         gameManager.Stop();
+        // Unload the audio driver explicitly as doing so during static destruction crashes with sdl2-compat
+        AUDIODRIVER.UnloadDriver();
         libsiedler2::setAllocator(nullptr);
     } catch(const RTTR_AssertError& error)
     {

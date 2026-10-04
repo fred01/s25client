@@ -7,9 +7,12 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/nowide/fstream.hpp>
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <unistd.h>
 
 namespace bfs = boost::filesystem;
 
@@ -42,7 +45,9 @@ int main(int argc, char* argv[])
         std::cerr << "Failed to init program!" << std::endl;
         return 1;
     }
-    if(argc <= 1 || argv[1] != std::string("interminal"))
+    const bool inTerminal = argc > 1 && argv[1] == std::string("interminal");
+    // A terminal is only required to interact with the user when the S2 files are missing
+    if(!inTerminal && !isS2Installed())
     {
         try
         {
@@ -102,5 +107,9 @@ int main(int argc, char* argv[])
         else
             std::cerr << "Updater not found at " << updaterPath << std::endl;
     }
-    System::execute(RTTRCONFIG.ExpandPath("<RTTR_BIN>/s25client"));
+    // Replace this process so the game runs as the app itself and the app terminates with the game
+    const std::string clientPath = RTTRCONFIG.ExpandPath("<RTTR_BIN>/s25client").string();
+    execl(clientPath.c_str(), clientPath.c_str(), static_cast<char*>(nullptr));
+    std::cerr << "Failed to start " << clientPath << ": " << std::strerror(errno) << std::endl;
+    return 1;
 }
