@@ -1,4 +1,4 @@
-# Builds ready to play packages for Windows and macOS and publishes them as the "latest" release
+# Builds ready to play packages for Windows, macOS and Linux and publishes them as the "latest" release
 
 name: Builds
 
@@ -105,20 +105,77 @@ jobs:
       - name: Sign
         # Apple Silicon only runs signed code, so sign ad-hoc
         run: |
-          codesign --force --deep --sign - package/s25client.app
-          codesign --verify --deep --verbose package/s25client.app
-          find package/s25client.app -type f -perm +111 -exec file {} \; | grep Mach-O
+          codesign --force --deep --sign - package/RTTR.app
+          codesign --verify --deep --verbose package/RTTR.app
+          find package/RTTR.app -type f -perm +111 -exec file {} \; | grep Mach-O
       - name: Package
-        run: ditto -c -k --keepParent package/s25client.app s25rttr_macos_arm64.zip
+        run: ditto -c -k --keepParent package/RTTR.app s25rttr_macos_arm64.zip
       - uses: actions/upload-artifact@v7
         with:
           name: s25rttr_macos_arm64
           path: s25rttr_macos_arm64.zip
           if-no-files-found: error
 
+  linux:
+    name: Linux x86_64
+    # Oldest available runner for a low glibc requirement
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: true
+      - name: Install dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=5 update
+          sudo apt-get -o Acquire::Retries=5 -y -q --no-install-suggests --no-install-recommends install \
+            gettext libsdl2-dev libsdl2-mixer-dev libbz2-dev libminiupnpc-dev liblua5.2-dev libboost-all-dev patchelf
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${CMAKE_FLAGS}
+          -DRTTR_BUNDLE=ON -DRTTR_INCLUDE_DEVTOOLS=ON
+          -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/package/s25rttr"
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+      - name: Install
+        run: cmake --install build
+      - name: Bundle libraries
+        # Copy all libraries except the ones which are part of every system or must match the system (graphics, sound)
+        run: |
+          set -euo pipefail
+          cd package/s25rttr
+          mkdir -p lib
+          exclude='^(ld-linux.*|linux-vdso.*|(libc|libm|libdl|libpthread|librt|libresolv|libutil|libstdc\+\+|libgcc_s|libz|libasound|libdbus-1|libsystemd|libudev)\.so.*|(libGL|libEGL|libOpenGL|libdrm|libgbm|libX|libxcb|libwayland|libxkbcommon|libpulse|libjack).*)$'
+          elfs=$(find . -type f \( -perm -u+x -o -name '*.so*' \) -exec sh -c 'file -b "$1" | grep -q ELF' _ {} \; -print)
+          for elf in $elfs; do
+            ldd "$elf" | awk '/=> \//{print $1, $3}'
+          done | sort -u | while read -r name path; do
+            if ! [[ "$name" =~ $exclude ]] && [[ ! -e "lib/$name" ]]; then
+              cp -vL "$path" "lib/$name"
+            fi
+          done
+          # Let the bundled libraries and the drivers find the bundled libraries
+          find lib -maxdepth 1 -name '*.so*' -type f -exec patchelf --set-rpath '$ORIGIN' {} \;
+          find lib/s25rttr/driver -name '*.so' -type f -exec patchelf --set-rpath '$ORIGIN/../../..' {} \;
+          # Verify that everything is found
+          missing=0
+          for elf in $elfs $(find lib -maxdepth 1 -name '*.so*' -type f); do
+            if ldd "$elf" | grep 'not found'; then echo "in $elf"; missing=1; fi
+          done
+          [[ $missing -eq 0 ]]
+          find . -type f | sort
+      - name: Package
+        run: |
+          cd package
+          tar -czf ../s25rttr_linux_x86_64.tar.gz s25rttr
+      - uses: actions/upload-artifact@v7
+        with:
+          name: s25rttr_linux_x86_64
+          path: s25rttr_linux_x86_64.tar.gz
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: [windows, macos]
+    needs: [windows, macos, linux]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
@@ -150,7 +207,10 @@ jobs:
 
             Copy the folders `DATA` and `GFX` from The Settlers II Gold:
             - Windows: next to `s25client.exe` (where the file `put your S2-Installation in here` is) and start `s25client.exe`
-            - macOS: start `s25client.app`, it tells you where to put them.
-              The app is not signed by Apple: run `xattr -dr com.apple.quarantine s25client.app` once after unpacking.
-          files: packages/*.zip
+            - macOS: start `RTTR.app`, it tells you where to put them.
+              The app is not signed by Apple: run `xattr -dr com.apple.quarantine RTTR.app` once after unpacking.
+            - Linux: into `s25rttr/share/s25rttr/S2` and start `s25rttr/bin/rttr.sh`
+          files: |
+            packages/*.zip
+            packages/*.tar.gz
           fail_on_unmatched_files: true
