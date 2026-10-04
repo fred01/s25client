@@ -103,11 +103,18 @@ jobs:
         # Creates the app bundle including all libraries
         run: cmake --install build
       - name: Sign
-        # Apple Silicon only runs signed code, so sign ad-hoc
+        # Apple Silicon only runs signed code, so sign ad-hoc.
+        # The bundle contains data files in Contents/MacOS which `codesign --deep` can't handle,
+        # so sign each binary (invalidated by install_name_tool) on its own
         run: |
-          codesign --force --deep --sign - package/RTTR.app
-          codesign --verify --deep --verbose package/RTTR.app
-          find package/RTTR.app -type f -perm +111 -exec file {} \; | grep Mach-O
+          set -euo pipefail
+          find package/RTTR.app -type f -exec sh -c 'file -b "$1" | grep -q Mach-O' _ {} \; -print > binaries.txt
+          cat binaries.txt
+          [[ -s binaries.txt ]]
+          while IFS= read -r bin; do
+            codesign --force --sign - "$bin"
+            codesign --verify --verbose "$bin"
+          done < binaries.txt
       - name: Package
         run: ditto -c -k --keepParent package/RTTR.app s25rttr_macos_arm64.zip
       - uses: actions/upload-artifact@v7
