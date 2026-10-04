@@ -46,5 +46,9 @@ private:
 
     void RefreshBuildingNums(const AIPlayerJH& aijh);
     bool CalcIsExpansionRequired(AIPlayerJH& aijh, bool recalc) const;
+    /// Buildings of the leather addon: skinner -> tannery -> leatherworks (armor)
+    void UpdateLeatherBuildingsWanted();
+    /// Buildings of the wine addon: vineyard -> winery -> temple (minerals)
+    void UpdateWineBuildingsWanted(const AIPlayerJH& aijh);
 };
 } // namespace AIJH

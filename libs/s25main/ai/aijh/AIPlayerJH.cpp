@@ -16,6 +16,7 @@
 #include "buildings/noBuildingSite.h"
 #include "buildings/nobHarborBuilding.h"
 #include "buildings/nobMilitary.h"
+#include "buildings/nobTemple.h"
 #include "buildings/nobUsual.h"
 #include "helpers/IdRange.h"
 #include "helpers/MaxEnumValue.h"
@@ -110,6 +111,24 @@ void HandleShipNote(AIEventManager& eventMgr, const ShipNote& note)
 {
     if(note.type == ShipNote::Constructed)
         eventMgr.AddAIEvent(std::make_unique<AIEvent::Location>(AIEvent::EventType::ShipBuilt, note.pos));
+}
+
+/// Let the temples produce the mineral whose mines we miss the most
+ProductionMode getWantedTempleProductionMode(const AIJH::BuildingPlanner& bldPlanner)
+{
+    const int missingCoal = bldPlanner.GetNumAdditionalBuildingsWanted(BuildingType::CoalMine);
+    const int missingIron = bldPlanner.GetNumAdditionalBuildingsWanted(BuildingType::IronMine);
+    const int missingGranite = bldPlanner.GetNumAdditionalBuildingsWanted(BuildingType::GraniteMine);
+    const int missingGold = bldPlanner.GetNumAdditionalBuildingsWanted(BuildingType::GoldMine);
+    const int maxMissing = std::max({missingCoal, missingIron, missingGranite});
+    // Gold is only produced by the default mode which yields every mineral
+    if(maxMissing <= 0 || missingGold >= maxMissing)
+        return ProductionMode::Default;
+    if(missingCoal == maxMissing)
+        return ProductionMode::Coal;
+    if(missingIron == maxMissing)
+        return ProductionMode::IronOre;
+    return ProductionMode::Stone;
 }
 } // namespace
 
@@ -316,16 +335,18 @@ void AIPlayerJH::PlanNewBuildings(const unsigned gf)
 
     // pick a random storehouse and try to build one of these buildings around it (checks if we actually want more of
     // the building type)
-    std::array<BuildingType, 24> bldToTest = {
-      {BuildingType::HarborBuilding, BuildingType::Shipyard,   BuildingType::Sawmill,
-       BuildingType::Forester,       BuildingType::Farm,       BuildingType::Fishery,
-       BuildingType::Woodcutter,     BuildingType::Quarry,     BuildingType::GoldMine,
-       BuildingType::IronMine,       BuildingType::CoalMine,   BuildingType::GraniteMine,
-       BuildingType::Hunter,         BuildingType::Charburner, BuildingType::Ironsmelter,
-       BuildingType::Mint,           BuildingType::Armory,     BuildingType::Metalworks,
-       BuildingType::Brewery,        BuildingType::Mill,       BuildingType::PigFarm,
-       BuildingType::Slaughterhouse, BuildingType::Bakery,     BuildingType::DonkeyBreeder}};
-    const unsigned numResGatherBlds = 14; /* The first n buildings in the above list, that gather resources */
+    std::array<BuildingType, 30> bldToTest = {
+      {BuildingType::HarborBuilding, BuildingType::Shipyard,       BuildingType::Sawmill,
+       BuildingType::Forester,       BuildingType::Farm,           BuildingType::Vineyard,
+       BuildingType::Fishery,        BuildingType::Woodcutter,     BuildingType::Quarry,
+       BuildingType::GoldMine,       BuildingType::IronMine,       BuildingType::CoalMine,
+       BuildingType::GraniteMine,    BuildingType::Hunter,         BuildingType::Charburner,
+       BuildingType::Ironsmelter,    BuildingType::Mint,           BuildingType::Armory,
+       BuildingType::Metalworks,     BuildingType::Brewery,        BuildingType::Mill,
+       BuildingType::PigFarm,        BuildingType::Slaughterhouse, BuildingType::Bakery,
+       BuildingType::DonkeyBreeder,  BuildingType::Skinner,        BuildingType::Tannery,
+       BuildingType::LeatherWorks,   BuildingType::Winery,         BuildingType::Temple}};
+    const unsigned numResGatherBlds = 15; /* The first n buildings in the above list, that gather resources */
 
     // LOG.write(("new buildorders %i whs and %i mil for player %i
     // \n",aii.GetStorehouses().size(),aii.GetMilitaryBuildings().size(),playerId);
@@ -996,6 +1017,7 @@ MapPoint AIPlayerJH::FindPositionForBuildingAround(BuildingType type, const MapP
                 foundPos = MapPoint::Invalid();
             break;
         case BuildingType::Farm:
+        case BuildingType::Vineyard:
             foundPos = FindBestPosition(around, AIResource::Plantspace, BUILDING_SIZE[type], searchRadius, 85);
             if(foundPos.isValid())
                 foundPos = FindBestPosition(around, AIResource::Plantspace, BUILDING_SIZE[type], searchRadius, 85);
@@ -1046,6 +1068,9 @@ void AIPlayerJH::HandleNewMilitaryBuildingOccupied(const MapPoint pt)
         if(!mil->IsGoldDisabled())
             aii.SetCoinsAllowed(pt, false);
     }
+    // armor might be disabled by default or for captured buildings (by addon): always enable it
+    if(ggs.isEnabled(AddonId::LEATHER) && !mil->IsArmorAllowed())
+        aii.SetArmorAllowed(pt, true);
 
     AddBuildJob(BuildingType::HarborBuilding, pt);
     if(!IsInvalidShipyardPosition(pt))
@@ -1096,7 +1121,8 @@ void AIPlayerJH::HandleBuilingDestroyed(MapPoint pt, BuildingType bld)
     switch(bld)
     {
         case BuildingType::Charburner:
-        case BuildingType::Farm: SetFarmedNodes(pt, false); break;
+        case BuildingType::Farm:
+        case BuildingType::Vineyard: SetFarmedNodes(pt, false); break;
         case BuildingType::HarborBuilding:
         {
             // destroy all other buildings around the harborspot in range 2 so we can rebuild the harbor ...
@@ -2022,6 +2048,10 @@ void AIPlayerJH::InitStoreAndMilitarylists()
     {
         SetFarmedNodes(charburner->GetPos(), true);
     }
+    for(const nobUsual* vineyard : aii.GetBuildings(BuildingType::Vineyard))
+    {
+        SetFarmedNodes(vineyard->GetPos(), true);
+    }
     // find the upgrade building
     UpdateUpgradeBuilding();
 }
@@ -2410,6 +2440,13 @@ void AIPlayerJH::AdjustSettings()
                 break;
             }
         }
+    }
+
+    const ProductionMode templeMode = getWantedTempleProductionMode(*bldPlanner);
+    for(const nobUsual* temple : aii.GetBuildings(BuildingType::Temple))
+    {
+        if(static_cast<const nobTemple*>(temple)->GetProductionMode() != templeMode)
+            aii.SetTempleProductionMode(temple->GetPos(), templeMode);
     }
 
     // Set military settings to some currently required values

@@ -140,7 +140,7 @@ int AIInterface::GetResourceRating(const MapPoint pt, AIResource res) const
                 return RES_RADIUS[res];
             else if(IsBuildingOnNode(pt, BuildingType::Forester))
                 return -40;
-            else if(IsBuildingOnNode(pt, BuildingType::Farm))
+            else if(IsBuildingOnNode(pt, BuildingType::Farm) || IsBuildingOnNode(pt, BuildingType::Vineyard))
                 return -20;
             break;
         case AIResource::Borderland:

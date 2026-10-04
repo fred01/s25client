@@ -149,7 +149,9 @@ void BuildingPlanner::UpdateBuildingsWanted(const AIPlayerJH& aijh)
 
         // foresters
         unsigned max_available_forester = inventory[Job::Forester] + inventory[GoodType::Shovel];
-        unsigned additional_forester = GetNumBuildings(BuildingType::Charburner);
+        // charburners burn a lot of wood, vineyards need 1 wood for each grapefield
+        unsigned additional_forester =
+          GetNumBuildings(BuildingType::Charburner) + (GetNumBuildings(BuildingType::Vineyard) + 1) / 2;
 
         // 1 mil -> 1 forester, 2 mil -> 2 forester, 4 mil -> 3 forester, 8 mil -> 4 forester, 16 mil -> 5 forester, ...
         // wanted
@@ -349,6 +351,11 @@ void BuildingPlanner::UpdateBuildingsWanted(const AIPlayerJH& aijh)
                 buildingsWanted[BuildingType::GraniteMine] = 0;
         }
 
+        if(aijh.ggs.isEnabled(AddonId::LEATHER))
+            UpdateLeatherBuildingsWanted();
+        if(aijh.ggs.isEnabled(AddonId::WINE))
+            UpdateWineBuildingsWanted(aijh);
+
         // Only build catapults if we have more than 5 military blds and 50 stones. Then reserve 4 stones per catapult
         // but do not build more than 4 additions catapults Note: This is a max amount. A catapult is only placed if
         // reasonable
@@ -361,6 +368,50 @@ void BuildingPlanner::UpdateBuildingsWanted(const AIPlayerJH& aijh)
     {
         buildingsWanted[BuildingType::GoldMine] = 0; // max rank is 0 = private / recruit ==> gold is useless!
     }
+}
+
+void BuildingPlanner::UpdateLeatherBuildingsWanted()
+{
+    // Armor lets soldiers survive hits, so start the chain once we produce weapons and have a source of skins:
+    // carcasses of animals shot by hunters or ham from pig farms.
+    // Skinner, tannery and leatherworks each turn 1 ware into 1 ware -> keep the chain balanced and build it in order
+    unsigned numChains = 0;
+    if(GetNumBuildings(BuildingType::Armory) > 0
+       && GetNumBuildings(BuildingType::Hunter) + GetNumBuildings(BuildingType::PigFarm) > 0)
+        numChains = (GetNumBuildings(BuildingType::PigFarm) > 2) ? 2 : 1;
+
+    buildingsWanted[BuildingType::Skinner] = numChains;
+    buildingsWanted[BuildingType::Tannery] = std::min(numChains, GetNumBuildings(BuildingType::Skinner));
+    buildingsWanted[BuildingType::LeatherWorks] = std::min(numChains, GetNumBuildings(BuildingType::Tannery));
+}
+
+void BuildingPlanner::UpdateWineBuildingsWanted(const AIPlayerJH& aijh)
+{
+    // The temple turns wine and food into gold, iron ore, coal or granite. That replaces mines we could not build
+    // (none found or exhausted), but it needs a working food economy as it competes with the mines for food.
+    unsigned numChains = 0;
+    if(GetNumBuildings(BuildingType::Farm) >= 4
+       && GetNumBuildings(BuildingType::Bakery) + GetNumBuildings(BuildingType::Slaughterhouse) > 0)
+    {
+        unsigned numMissingMines = 0;
+        for(const BuildingType bld : {BuildingType::CoalMine, BuildingType::IronMine, BuildingType::GoldMine})
+        {
+            if(bld == BuildingType::GoldMine && aijh.ggs.GetMaxMilitaryRank() == 0)
+                continue; // gold is useless
+            numMissingMines += std::max(GetNumAdditionalBuildingsWanted(bld), 0);
+        }
+        if(numMissingMines > 0)
+            numChains = (numMissingMines >= 3 && GetNumBuildings(BuildingType::Farm) > 7) ? 2 : 1;
+        else if(GetNumBuildings(BuildingType::Farm) > 7) // big empire: mines will run out eventually
+            numChains = 1;
+    }
+
+    // Grapes grow slowly, so use 2 vineyards per winery. Build the chain in order.
+    buildingsWanted[BuildingType::Vineyard] = numChains * 2;
+    buildingsWanted[BuildingType::Winery] = std::min(numChains, (GetNumBuildings(BuildingType::Vineyard) + 1) / 2);
+    buildingsWanted[BuildingType::Temple] = std::min(numChains, GetNumBuildings(BuildingType::Winery));
+    // vineyards need water
+    buildingsWanted[BuildingType::Well] += buildingsWanted[BuildingType::Vineyard];
 }
 
 int BuildingPlanner::GetNumAdditionalBuildingsWanted(BuildingType type) const

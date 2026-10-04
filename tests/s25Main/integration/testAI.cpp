@@ -6,6 +6,7 @@
 #include "RttrForeachPt.h"
 #include "ai/AIPlayer.h"
 #include "ai/aijh/AIPlayerJH.h"
+#include "ai/aijh/BuildingPlanner.h"
 #include "buildings/noBuilding.h"
 #include "buildings/noBuildingSite.h"
 #include "buildings/nobBaseWarehouse.h"
@@ -390,6 +391,109 @@ BOOST_FIXTURE_TEST_CASE(DoBuildMilitaryBuildingsOutsideComputerBarrier, BiggerWo
               return (type == BuildingType::Barracks || type == BuildingType::Guardhouse) && pt == bldSite->GetPos();
           },
           true));
+}
+
+namespace {
+/// Places buildings of the given types around the HQ of the player
+struct BuildingPlacer
+{
+    GameWorld& world;
+    const GamePlayer& player;
+    std::vector<MapPoint> freePts;
+
+    BuildingPlacer(GameWorld& world, const GamePlayer& player) : world(world), player(player)
+    {
+        const MapPoint hqPos = player.GetHQPos();
+        for(const MapPoint pt : world.GetPointsInRadius(hqPos, 8))
+        {
+            // Every 2nd point keeps buildings and flags apart
+            if(pt.x % 2 == 0 && pt.y % 2 == 0 && world.CalcDistance(pt, hqPos) > 2)
+                freePts.push_back(pt);
+        }
+    }
+
+    void place(BuildingType type, unsigned count = 1)
+    {
+        for(unsigned i = 0; i < count; i++)
+        {
+            BOOST_TEST_REQUIRE(!freePts.empty());
+            BuildingFactory::CreateBuilding(world, type, freePts.back(), player.GetPlayerId(), Nation::Romans);
+            freePts.pop_back();
+        }
+    }
+};
+
+int getNumWanted(GameWorld& world, unsigned playerId, BuildingType type)
+{
+    // The planner calculates the wanted buildings on creation
+    auto ai = AIFactory::Create(AI::Info(AI::Type::Default, AI::Level::Hard), playerId, world);
+    return static_cast<AIJH::AIPlayerJH&>(*ai).GetBldPlanner().GetNumAdditionalBuildingsWanted(type);
+}
+} // namespace
+
+BOOST_FIXTURE_TEST_CASE(PlanLeatherIndustry, BiggerWorldWithGCExecution)
+{
+    const GamePlayer& player = world.GetPlayer(curPlayer);
+    BuildingPlacer placer(world, player);
+    placer.place(BuildingType::Barracks);
+    placer.place(BuildingType::Armory);
+    placer.place(BuildingType::Hunter);
+
+    // Not used without addon
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Skinner) == 0);
+
+    ggs.setSelection(AddonId::LEATHER, 1);
+    // Chain is built in order
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Skinner) == 1);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Tannery) == 0);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::LeatherWorks) == 0);
+    placer.place(BuildingType::Skinner);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Skinner) == 0);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Tannery) == 1);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::LeatherWorks) == 0);
+    placer.place(BuildingType::Tannery);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Tannery) == 0);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::LeatherWorks) == 1);
+    placer.place(BuildingType::LeatherWorks);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::LeatherWorks) == 0);
+    // More pig farms -> 2nd chain
+    placer.place(BuildingType::PigFarm, 3);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Skinner) == 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(PlanWineIndustry, BiggerWorldWithGCExecution)
+{
+    const GamePlayer& player = world.GetPlayer(curPlayer);
+    BuildingPlacer placer(world, player);
+    placer.place(BuildingType::Barracks);
+    placer.place(BuildingType::Bakery);
+    placer.place(BuildingType::Farm, 8);
+
+    // Not used without addon
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Vineyard) == 0);
+
+    ggs.setSelection(AddonId::WINE, 1);
+    // Chain is built in order
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Vineyard) >= 2);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Winery) == 0);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Temple) == 0);
+    placer.place(BuildingType::Vineyard);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Winery) == 1);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Temple) == 0);
+    placer.place(BuildingType::Winery);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Winery) == 0);
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Temple) == 1);
+}
+
+BOOST_FIXTURE_TEST_CASE(NoWineIndustryWithoutFood, BiggerWorldWithGCExecution)
+{
+    ggs.setSelection(AddonId::WINE, 1);
+    const GamePlayer& player = world.GetPlayer(curPlayer);
+    BuildingPlacer placer(world, player);
+    placer.place(BuildingType::Barracks);
+    placer.place(BuildingType::Farm, 8);
+    // Temple needs food
+    BOOST_TEST(getNumWanted(world, curPlayer, BuildingType::Vineyard) == 0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
