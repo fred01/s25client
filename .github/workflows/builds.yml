@@ -87,7 +87,7 @@ jobs:
         env:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
-          brew install boost sdl2 sdl2_mixer gettext miniupnpc
+          brew install boost sdl2 sdl3 sdl2_mixer gettext miniupnpc
           BOOST_ROOT=$(find "$HOMEBREW_CELLAR/boost/"* -maxdepth 0 -type d | tail -n1)
           [[ -n "$BOOST_ROOT" ]] || exit 1
           echo "BOOST_ROOT=${BOOST_ROOT}" >> "$GITHUB_ENV"
@@ -102,6 +102,15 @@ jobs:
       - name: Install
         # Creates the app bundle including all libraries
         run: cmake --install build
+      - name: Add SDL3
+        # Homebrews sdl2 is sdl2-compat which loads SDL3 at runtime from its own directory
+        run: |
+          set -euo pipefail
+          lib=package/RTTR.app/Contents/Frameworks/libSDL3.dylib
+          cp "$(brew --prefix sdl3)/lib/libSDL3.0.dylib" "$lib"
+          chmod u+w "$lib"
+          install_name_tool -id @rpath/libSDL3.dylib "$lib"
+          otool -L "$lib"
       - name: Sign
         # Apple Silicon only runs signed code, so sign ad-hoc.
         # The bundle contains data files in Contents/MacOS which codesign can't seal,
